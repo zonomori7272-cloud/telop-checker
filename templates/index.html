@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>テロップ誤字脱字チェッカー</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Yu Gothic UI', sans-serif;
+      background: #f0f4f8;
+      color: #1e293b;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #1e40af;
+      color: #fff;
+      padding: 20px 24px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.2);
+    }
+    header h1 { font-size: 1.4rem; font-weight: 700; letter-spacing: .03em; }
+    header p  { font-size: .85rem; margin-top: 4px; opacity: .85; }
+
+    main {
+      max-width: 860px;
+      margin: 32px auto;
+      padding: 0 16px 60px;
+    }
+
+    /* ---- カード共通 ---- */
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 1px 6px rgba(0,0,0,.08);
+      padding: 28px 32px;
+      margin-bottom: 24px;
+    }
+    .card h2 {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 16px;
+      color: #1e40af;
+      border-left: 4px solid #1e40af;
+      padding-left: 10px;
+    }
+
+    /* ---- ドロップゾーン ---- */
+    #drop-zone {
+      border: 2.5px dashed #94a3b8;
+      border-radius: 10px;
+      padding: 48px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+    }
+    #drop-zone.dragover {
+      border-color: #1e40af;
+      background: #eff6ff;
+    }
+    #drop-zone.has-file {
+      border-color: #16a34a;
+      background: #f0fdf4;
+    }
+    #drop-zone .icon {
+      font-size: 3rem;
+      margin-bottom: 12px;
+      display: block;
+    }
+    #drop-zone p { color: #64748b; font-size: .9rem; line-height: 1.7; }
+    #drop-zone .file-name {
+      color: #1e40af;
+      font-weight: 600;
+      font-size: 1rem;
+      margin-top: 8px;
+    }
+
+    #file-input { display: none; }
+
+    .btn {
+      display: inline-block;
+      padding: 10px 28px;
+      border: none;
+      border-radius: 8px;
+      font-size: .95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .15s, transform .1s;
+    }
+    .btn:active { transform: scale(.97); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    .btn-primary { background: #1e40af; color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #1d4ed8; }
+
+    .btn-success { background: #16a34a; color: #fff; }
+    .btn-success:hover:not(:disabled) { background: #15803d; }
+
+    .btn-outline {
+      background: transparent;
+      color: #1e40af;
+      border: 2px solid #1e40af;
+    }
+    .btn-outline:hover:not(:disabled) { background: #eff6ff; }
+
+    #start-btn { margin-top: 20px; display: block; width: 100%; text-align: center; }
+
+    /* ---- プログレス ---- */
+    #progress-section { display: none; }
+
+    .progress-bar-wrap {
+      background: #e2e8f0;
+      border-radius: 999px;
+      height: 14px;
+      overflow: hidden;
+      margin-bottom: 10px;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #1e40af, #3b82f6);
+      border-radius: 999px;
+      transition: width .4s ease;
+      width: 0%;
+    }
+    .progress-label {
+      font-size: .85rem;
+      color: #475569;
+      text-align: center;
+    }
+    .spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2.5px solid #cbd5e1;
+      border-top-color: #1e40af;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ---- 結果 ---- */
+    #result-section { display: none; }
+
+    .result-summary {
+      font-size: .95rem;
+      color: #475569;
+      margin-bottom: 16px;
+    }
+    .result-summary .count { font-weight: 700; color: #1e40af; }
+
+    .no-issue-msg {
+      text-align: center;
+      padding: 32px;
+      font-size: 1.05rem;
+      color: #16a34a;
+      font-weight: 600;
+    }
+
+    .table-wrap { overflow-x: auto; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .88rem;
+    }
+    th, td {
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    th {
+      background: #f8fafc;
+      font-weight: 700;
+      color: #475569;
+      white-space: nowrap;
+    }
+    tr:hover td { background: #f8fafc; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-size: .78rem;
+      font-weight: 600;
+    }
+    .badge-ok   { background: #dcfce7; color: #16a34a; }
+    .badge-ng   { background: #fee2e2; color: #dc2626; }
+    tr.has-issue td { background: #fff7f7; }
+
+    .actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 20px;
+      flex-wrap: wrap;
+    }
+
+    /* ---- エラー ---- */
+    #error-section { display: none; }
+    .error-box {
+      background: #fef2f2;
+      border: 1.5px solid #fca5a5;
+      border-radius: 8px;
+      padding: 16px 20px;
+      color: #b91c1c;
+      font-size: .9rem;
+      line-height: 1.6;
+    }
+    .error-box strong { display: block; margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>テロップ誤字脱字チェッカー</h1>
+  <p>YouTube動画のテロップを自動で読み取り、誤字・脱字・表記ゆれをチェックします</p>
+</header>
+
+<main>
+
+  <!-- アップロードカード -->
+  <div class="card" id="upload-section">
+    <h2>動画をアップロード</h2>
+
+    <div id="drop-zone">
+      <span class="icon">🎬</span>
+      <p>MP4ファイルをここにドラッグ＆ドロップ<br>または下のボタンでファイルを選択</p>
+      <p id="file-name-display" class="file-name" style="display:none"></p>
+      <input type="file" id="file-input" accept=".mp4,video/mp4">
+    </div>
+
+    <button class="btn btn-primary" id="start-btn" disabled>
+      チェックを開始する
+    </button>
+  </div>
+
+  <!-- プログレスカード -->
+  <div class="card" id="progress-section">
+    <h2>処理中...</h2>
+    <div class="progress-bar-wrap">
+      <div class="progress-bar-fill" id="progress-bar"></div>
+    </div>
+    <p class="progress-label" id="progress-label">
+      <span class="spinner"></span>
+      <span id="progress-text">処理を開始しています...</span>
+    </p>
+  </div>
+
+  <!-- 結果カード -->
+  <div class="card" id="result-section">
+    <h2>チェック結果</h2>
+    <p class="result-summary" id="result-summary"></p>
+    <div id="result-body"></div>
+    <div class="actions">
+      <button class="btn btn-success" id="download-btn">CSVでダウンロード</button>
+      <button class="btn btn-outline" id="retry-btn">もう一度チェックする</button>
+    </div>
+  </div>
+
+  <!-- エラーカード -->
+  <div class="card" id="error-section">
+    <h2>エラー</h2>
+    <div class="error-box" id="error-box">
+      <strong>処理中にエラーが発生しました</strong>
+      <span id="error-message"></span>
+    </div>
+    <div class="actions" style="margin-top:16px">
+      <button class="btn btn-outline" id="error-retry-btn">もう一度試す</button>
+    </div>
+  </div>
+
+</main>
+
+<script>
+  const dropZone    = document.getElementById('drop-zone');
+  const fileInput   = document.getElementById('file-input');
+  const startBtn    = document.getElementById('start-btn');
+  const fileNameDisp = document.getElementById('file-name-display');
+
+  const uploadSec   = document.getElementById('upload-section');
+  const progressSec = document.getElementById('progress-section');
+  const resultSec   = document.getElementById('result-section');
+  const errorSec    = document.getElementById('error-section');
+
+  const progressBar  = document.getElementById('progress-bar');
+  const progressText = document.getElementById('progress-text');
+  const resultSummary = document.getElementById('result-summary');
+  const resultBody    = document.getElementById('result-body');
+  const errorMessage  = document.getElementById('error-message');
+  const downloadBtn   = document.getElementById('download-btn');
+
+  let currentTaskId = null;
+  let pollTimer     = null;
+  let selectedFile  = null;
+
+  // ---- ドラッグ＆ドロップ ----
+  dropZone.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropZone.classList.add('dragover');
+  });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    const f = e.dataTransfer.files[0];
+    if (f) setFile(f);
+  });
+  dropZone.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) setFile(fileInput.files[0]);
+  });
+
+  function setFile(file) {
+    if (!file.name.toLowerCase().endsWith('.mp4')) {
+      alert('MP4ファイルを選択してください。');
+      return;
+    }
+    selectedFile = file;
+    fileNameDisp.textContent = `${file.name}  (${formatBytes(file.size)})`;
+    fileNameDisp.style.display = 'block';
+    dropZone.classList.add('has-file');
+    startBtn.disabled = false;
+  }
+
+  function formatBytes(b) {
+    if (b >= 1073741824) return (b / 1073741824).toFixed(1) + ' GB';
+    if (b >= 1048576)    return (b / 1048576).toFixed(1) + ' MB';
+    return (b / 1024).toFixed(0) + ' KB';
+  }
+
+  // ---- チェック開始 ----
+  startBtn.addEventListener('click', () => {
+    if (!selectedFile) return;
+    uploadAndStart(selectedFile);
+  });
+
+  async function uploadAndStart(file) {
+    show('progress');
+
+    const formData = new FormData();
+    formData.append('video', file);
+
+    try {
+      const res  = await fetch('/upload', { method: 'POST', body: formData });
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        showError(data.error || 'アップロードに失敗しました。');
+        return;
+      }
+
+      currentTaskId = data.task_id;
+      startPolling();
+    } catch (err) {
+      showError('サーバーへの接続に失敗しました。アプリが起動しているか確認してください。');
+    }
+  }
+
+  // ---- ポーリング ----
+  function startPolling() {
+    clearInterval(pollTimer);
+    pollTimer = setInterval(poll, 2000);
+  }
+
+  async function poll() {
+    try {
+      const res  = await fetch(`/status/${currentTaskId}`);
+      const data = await res.json();
+
+      if (data.error) {
+        clearInterval(pollTimer);
+        showError(data.error);
+        return;
+      }
+
+      progressBar.style.width = data.progress + '%';
+      progressText.textContent = data.message;
+
+      if (data.status === 'done') {
+        clearInterval(pollTimer);
+        showResults(data.results);
+      } else if (data.status === 'error') {
+        clearInterval(pollTimer);
+        showError(data.message);
+      }
+    } catch (err) {
+      clearInterval(pollTimer);
+      showError('ステータスの取得中にエラーが発生しました。');
+    }
+  }
+
+  // ---- 結果表示 ----
+  function showResults(results) {
+    const total   = results.length;
+    const issues  = results.filter(r => r.has_issue).length;
+
+    if (total === 0) {
+      resultSummary.innerHTML = 'テロップは検出されませんでした。';
+      resultBody.innerHTML = '<p class="no-issue-msg">テロップが見つかりませんでした</p>';
+    } else if (issues === 0) {
+      resultSummary.innerHTML =
+        `<span class="count">${total}</span> 件のテロップを検出。問題は見つかりませんでした ✅`;
+      resultBody.innerHTML = '<p class="no-issue-msg">✅ 問題は見つかりませんでした</p>';
+    } else {
+      resultSummary.innerHTML =
+        `<span class="count">${total}</span> 件のテロップを検出。` +
+        `うち <span class="count" style="color:#dc2626">${issues}</span> 件に問題が見つかりました。`;
+      resultBody.innerHTML = buildTable(results);
+    }
+
+    // 問題なしでもテーブルは見せる（total > 0 の場合）
+    if (total > 0 && issues === 0) {
+      resultBody.innerHTML += buildTable(results);
+    }
+
+    show('result');
+  }
+
+  function buildTable(results) {
+    const rows = results.map(r => {
+      const badge = r.has_issue
+        ? '<span class="badge badge-ng">問題あり</span>'
+        : '<span class="badge badge-ok">問題なし</span>';
+      const rowClass = r.has_issue ? ' class="has-issue"' : '';
+      const detail = r.issue_detail
+        ? escHtml(r.issue_detail)
+        : '<span style="color:#94a3b8">—</span>';
+      return `<tr${rowClass}>
+        <td style="white-space:nowrap">${escHtml(r.timestamp)}</td>
+        <td>${escHtml(r.telop_text)}</td>
+        <td>${badge}</td>
+        <td>${detail}</td>
+      </tr>`;
+    }).join('');
+
+    return `<div class="table-wrap"><table>
+      <thead><tr>
+        <th>タイムスタンプ</th>
+        <th>テロップ内容</th>
+        <th>判定</th>
+        <th>問題の詳細</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+  }
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // ---- CSV ダウンロード ----
+  downloadBtn.addEventListener('click', () => {
+    if (currentTaskId) {
+      window.location.href = `/download/${currentTaskId}`;
+    }
+  });
+
+  // ---- もう一度 ----
+  document.getElementById('retry-btn').addEventListener('click', resetAll);
+  document.getElementById('error-retry-btn').addEventListener('click', resetAll);
+
+  function resetAll() {
+    clearInterval(pollTimer);
+    currentTaskId = null;
+    selectedFile  = null;
+    fileInput.value = '';
+    fileNameDisp.style.display = 'none';
+    fileNameDisp.textContent = '';
+    dropZone.classList.remove('has-file');
+    startBtn.disabled = true;
+    progressBar.style.width = '0%';
+    progressText.textContent = '処理を開始しています...';
+    show('upload');
+  }
+
+  // ---- セクション表示切り替え ----
+  function show(section) {
+    uploadSec.style.display   = section === 'upload'   ? 'block' : 'none';
+    progressSec.style.display = section === 'progress' ? 'block' : 'none';
+    resultSec.style.display   = section === 'result'   ? 'block' : 'none';
+    errorSec.style.display    = section === 'error'    ? 'block' : 'none';
+  }
+
+  function showError(msg) {
+    errorMessage.textContent = msg;
+    show('error');
+  }
+
+  // 初期表示
+  show('upload');
+</script>
+</body>
+</html>

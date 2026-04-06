@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "telop-checker",
+      "runtimeExecutable": "venv/bin/python",
+      "runtimeArgs": ["app.py"],
+      "port": 5000
+    }
+  ]
+}
