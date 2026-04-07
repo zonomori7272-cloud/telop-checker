@@ -334,55 +334,61 @@
     uploadAndStart(selectedFile);
   });
 
-  function uploadAndStart(file) {
+  async function uploadAndStart(file) {
     show('progress');
     document.getElementById('progress-title').textContent = 'アップロード中...';
     progressBar.style.width = '0%';
-    progressText.textContent = '動画をサーバーに送信しています...';
+    progressText.textContent = '動画を分割して送信しています...';
 
-    const formData = new FormData();
-    formData.append('video', file);
+    const CHUNK_SIZE  = 10 * 1024 * 1024; // 10MB
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+    const taskId      = generateUUID();
 
-    const xhr = new XMLHttpRequest();
+    for (let i = 0; i < totalChunks; i++) {
+      const start = i * CHUNK_SIZE;
+      const end   = Math.min(start + CHUNK_SIZE, file.size);
+      const chunk = file.slice(start, end);
 
-    xhr.upload.addEventListener('progress', e => {
-      if (e.lengthComputable) {
-        const pct = Math.round((e.loaded / e.total) * 100);
+      const formData = new FormData();
+      formData.append('chunk',        chunk);
+      formData.append('task_id',      taskId);
+      formData.append('chunk_index',  i);
+      formData.append('total_chunks', totalChunks);
+
+      try {
+        const res  = await fetch('/upload_chunk', { method: 'POST', body: formData });
+        const data = await res.json();
+
+        if (!res.ok || data.error) {
+          showError(data.error || 'アップロードに失敗しました。');
+          return;
+        }
+
+        const pct = Math.round(((i + 1) / totalChunks) * 100);
         progressBar.style.width = pct + '%';
-        const loaded = formatBytes(e.loaded);
-        const total  = formatBytes(e.total);
-        progressText.textContent = `アップロード中... ${loaded} / ${total} (${pct}%)`;
-      }
-    });
+        const sent  = formatBytes(Math.min((i + 1) * CHUNK_SIZE, file.size));
+        const total = formatBytes(file.size);
+        progressText.textContent = `アップロード中... ${sent} / ${total} (${pct}%)`;
 
-    xhr.addEventListener('load', () => {
-      let data;
-      try { data = JSON.parse(xhr.responseText); } catch(e) {
-        showError('サーバーからの応答が不正です。');
+        if (i === totalChunks - 1) {
+          document.getElementById('progress-title').textContent = '処理中...';
+          progressBar.style.width = '0%';
+          progressText.textContent = '処理を開始しています...';
+          currentTaskId = data.task_id;
+          startPolling();
+        }
+      } catch (err) {
+        showError('アップロード中に接続エラーが発生しました。再試行してください。');
         return;
       }
-      if (xhr.status !== 200 || data.error) {
-        showError(data.error || 'アップロードに失敗しました。');
-        return;
-      }
-      document.getElementById('progress-title').textContent = '処理中...';
-      progressBar.style.width = '0%';
-      progressText.textContent = '処理を開始しています...';
-      currentTaskId = data.task_id;
-      startPolling();
-    });
+    }
+  }
 
-    xhr.addEventListener('error', () => {
-      showError('サーバーへの接続に失敗しました。');
+  function generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0;
+      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
     });
-
-    xhr.addEventListener('timeout', () => {
-      showError('アップロードがタイムアウトしました。動画を短くするか、ネットワーク環境を確認してください。');
-    });
-
-    xhr.timeout = 1800000; // 30分
-    xhr.open('POST', '/upload');
-    xhr.send(formData);
   }
 
   // ---- ポーリング ----

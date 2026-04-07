@@ -69,6 +69,57 @@ def upload():
     return jsonify({'task_id': task_id})
 
 
+@app.route('/upload_chunk', methods=['POST'])
+def upload_chunk():
+    import shutil
+    task_id    = request.form.get('task_id')
+    chunk_idx  = request.form.get('chunk_index')
+    total      = request.form.get('total_chunks')
+    chunk_file = request.files.get('chunk')
+
+    if not task_id or chunk_idx is None or total is None or chunk_file is None:
+        return jsonify({'error': 'パラメータが不正です'}), 400
+
+    chunk_idx = int(chunk_idx)
+    total     = int(total)
+
+    chunk_dir = os.path.join(UPLOAD_FOLDER, f'{task_id}_chunks')
+    os.makedirs(chunk_dir, exist_ok=True)
+    chunk_file.save(os.path.join(chunk_dir, f'{chunk_idx:06d}'))
+
+    if chunk_idx < total - 1:
+        return jsonify({'received': chunk_idx})
+
+    # 全チャンク受信完了 → 結合
+    filepath = os.path.join(UPLOAD_FOLDER, f'{task_id}.mp4')
+    with open(filepath, 'wb') as out:
+        for i in range(total):
+            p = os.path.join(chunk_dir, f'{i:06d}')
+            with open(p, 'rb') as f:
+                out.write(f.read())
+    shutil.rmtree(chunk_dir, ignore_errors=True)
+
+    if not os.environ.get('ANTHROPIC_API_KEY'):
+        os.remove(filepath)
+        return jsonify({'error': 'ANTHROPIC_API_KEY が設定されていません。'}), 500
+
+    tasks[task_id] = {
+        'status': 'processing',
+        'progress': 0,
+        'message': '処理を開始しています...',
+        'results': [],
+    }
+
+    thread = threading.Thread(
+        target=process_video,
+        args=(task_id, filepath),
+        daemon=True
+    )
+    thread.start()
+
+    return jsonify({'task_id': task_id, 'status': 'processing'})
+
+
 def process_video(task_id, filepath):
     try:
         from extractor import extract_key_frames
