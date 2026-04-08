@@ -174,6 +174,29 @@ def process_video(task_id, filepath):
             os.remove(filepath)
 
 
+@app.route('/test-api')
+def test_api():
+    """Anthropic API への接続テスト用エンドポイント"""
+    import anthropic as _anthropic
+    key = os.environ.get('ANTHROPIC_API_KEY', '')
+    if not key:
+        return jsonify({'error': 'ANTHROPIC_API_KEY が未設定'}), 500
+    try:
+        client = _anthropic.Anthropic(api_key=key, timeout=15.0)
+        resp = client.messages.create(
+            model='claude-sonnet-4-20250514',
+            max_tokens=10,
+            messages=[{'role': 'user', 'content': 'hi'}]
+        )
+        return jsonify({'ok': True, 'reply': resp.content[0].text})
+    except _anthropic.AuthenticationError:
+        return jsonify({'error': 'APIキーが無効'}), 401
+    except _anthropic.APIConnectionError as e:
+        return jsonify({'error': f'接続エラー: {str(e)}'}), 502
+    except Exception as e:
+        return jsonify({'error': f'{type(e).__name__}: {str(e)}'}), 500
+
+
 @app.route('/status/<task_id>')
 def status(task_id):
     if task_id not in tasks:
