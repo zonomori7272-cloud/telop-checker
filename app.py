@@ -45,7 +45,7 @@ def upload():
     if not file.filename.lower().endswith('.mp4'):
         return jsonify({'error': 'MP4ファイルのみ対応しています。別の形式の場合はMP4に変換してください。'}), 400
 
-    if not os.environ.get('ANTHROPIC_API_KEY'):
+    if not os.environ.get('ANTHROPIC_API_KEY', '').strip():
         return jsonify({'error': 'ANTHROPIC_API_KEY が設定されていません。.env ファイルまたは環境変数を確認してください。'}), 500
 
     task_id = str(uuid.uuid4())
@@ -99,7 +99,7 @@ def upload_chunk():
                 out.write(f.read())
     shutil.rmtree(chunk_dir, ignore_errors=True)
 
-    if not os.environ.get('ANTHROPIC_API_KEY'):
+    if not os.environ.get('ANTHROPIC_API_KEY', '').strip():
         os.remove(filepath)
         return jsonify({'error': 'ANTHROPIC_API_KEY が設定されていません。'}), 500
 
@@ -180,7 +180,7 @@ def test_api():
     import requests as _requests
 
     results = {}
-    key = os.environ.get('ANTHROPIC_API_KEY', '')
+    key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
     results['api_key_set'] = bool(key)
     results['api_key_prefix'] = key[:12] if key else 'none'
 

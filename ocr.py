@@ -30,7 +30,7 @@ def check_telop(frame_base64, timestamp_seconds):
         dict with keys: timestamp, telop_text, has_issue, issue_detail
         テロップが無い場合は None
     """
-    api_key = os.environ.get('ANTHROPIC_API_KEY', '')
+    api_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
     if not api_key:
         raise Exception('ANTHROPIC_API_KEY が設定されていません。')
 
