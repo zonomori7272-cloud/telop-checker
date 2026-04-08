@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import time
 
 import anthropic
 
@@ -27,57 +28,68 @@ def check_telop(frame_base64, timestamp_seconds):
         dict with keys: timestamp, telop_text, has_issue, issue_detail
         テロップが無い場合は None
     """
-    try:
-        client = anthropic.Anthropic(api_key=os.environ.get('ANTHROPIC_API_KEY'))
+    client = anthropic.Anthropic(api_key=os.environ.get('ANTHROPIC_API_KEY'))
 
-        response = client.messages.create(
-            model='claude-sonnet-4-20250514',
-            max_tokens=1024,
-            messages=[{
-                'role': 'user',
-                'content': [
-                    {
-                        'type': 'image',
-                        'source': {
-                            'type': 'base64',
-                            'media_type': 'image/jpeg',
-                            'data': frame_base64,
+    for attempt in range(3):
+        try:
+            response = client.messages.create(
+                model='claude-sonnet-4-20250514',
+                max_tokens=1024,
+                messages=[{
+                    'role': 'user',
+                    'content': [
+                        {
+                            'type': 'image',
+                            'source': {
+                                'type': 'base64',
+                                'media_type': 'image/jpeg',
+                                'data': frame_base64,
+                            },
                         },
-                    },
-                    {
-                        'type': 'text',
-                        'text': PROMPT,
-                    },
-                ],
-            }]
-        )
+                        {
+                            'type': 'text',
+                            'text': PROMPT,
+                        },
+                    ],
+                }]
+            )
 
-        text = response.content[0].text.strip()
+            text = response.content[0].text.strip()
 
-        # レスポンスから JSON を抽出
-        json_match = re.search(r'\{.*?\}', text, re.DOTALL)
-        if not json_match:
+            # レスポンスから JSON を抽出
+            json_match = re.search(r'\{.*?\}', text, re.DOTALL)
+            if not json_match:
+                return None
+
+            data = json.loads(json_match.group())
+            data['timestamp'] = _format_timestamp(timestamp_seconds)
+            return data
+
+        except json.JSONDecodeError:
             return None
-
-        data = json.loads(json_match.group())
-        data['timestamp'] = _format_timestamp(timestamp_seconds)
-        return data
-
-    except json.JSONDecodeError:
-        return None
-    except anthropic.AuthenticationError:
-        raise Exception(
-            'APIキーが無効です。ANTHROPIC_API_KEY 環境変数を確認してください。'
-        )
-    except anthropic.RateLimitError:
-        raise Exception(
-            'Claude API のレート制限に達しました。しばらく待ってから再試行してください。'
-        )
-    except anthropic.BadRequestError as e:
-        # 画像解析できないフレームはスキップ
-        return None
-    except Exception as e:
-        raise Exception(f'Claude API エラー: {str(e)}')
+        except anthropic.AuthenticationError:
+            raise Exception(
+                'APIキーが無効です。ANTHROPIC_API_KEY 環境変数を確認してください。'
+            )
+        except anthropic.RateLimitError:
+            # レート制限は少し待ってリトライ
+            if attempt < 2:
+                time.sleep(10)
+                continue
+            raise Exception(
+                'Claude API のレート制限に達しました。しばらく待ってから再試行してください。'
+            )
+        except anthropic.BadRequestError:
+            # 画像解析できないフレームはスキップ
+            return None
+        except (anthropic.APIConnectionError, anthropic.APIStatusError) as e:
+            # 接続エラーはリトライ
+            if attempt < 2:
+                time.sleep(5 * (attempt + 1))
+                continue
+            raise Exception(f'Claude API 接続エラー（3回リトライ後）: {str(e)}')
+        except Exception as e:
+            raise Exception(f'Claude API エラー: {str(e)}')
 
 
 def _format_timestamp(seconds):
