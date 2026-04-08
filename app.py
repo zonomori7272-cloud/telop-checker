@@ -177,46 +177,35 @@ def process_video(task_id, filepath):
 @app.route('/test-api')
 def test_api():
     """Anthropic API への接続テスト用エンドポイント"""
-    import urllib.request
-    import ssl
-    import anthropic as _anthropic
+    import requests as _requests
 
     results = {}
-
-    # ① 生のHTTP接続テスト
-    try:
-        req = urllib.request.Request(
-            'https://api.anthropic.com',
-            headers={'User-Agent': 'test'}
-        )
-        urllib.request.urlopen(req, timeout=10)
-        results['network'] = 'ok'
-    except urllib.error.HTTPError as e:
-        results['network'] = f'ok (HTTP {e.code})'
-    except Exception as e:
-        results['network'] = f'NG: {type(e).__name__}: {str(e)}'
-
-    # ② APIキー確認
     key = os.environ.get('ANTHROPIC_API_KEY', '')
     results['api_key_set'] = bool(key)
     results['api_key_prefix'] = key[:12] if key else 'none'
 
-    # ③ SDK呼び出しテスト
     if key:
         try:
-            client = _anthropic.Anthropic(api_key=key, timeout=15.0)
-            resp = client.messages.create(
-                model='claude-sonnet-4-20250514',
-                max_tokens=10,
-                messages=[{'role': 'user', 'content': 'hi'}]
+            resp = _requests.post(
+                'https://api.anthropic.com/v1/messages',
+                headers={
+                    'x-api-key': key,
+                    'anthropic-version': '2023-06-01',
+                    'content-type': 'application/json',
+                },
+                json={
+                    'model': 'claude-sonnet-4-20250514',
+                    'max_tokens': 10,
+                    'messages': [{'role': 'user', 'content': 'hi'}],
+                },
+                timeout=20,
             )
-            results['sdk'] = f'ok: {resp.content[0].text}'
-        except _anthropic.AuthenticationError:
-            results['sdk'] = 'NG: APIキーが無効'
-        except _anthropic.APIConnectionError as e:
-            results['sdk'] = f'NG 接続エラー: {str(e)}'
+            if resp.status_code == 200:
+                results['api'] = f'ok: {resp.json()["content"][0]["text"]}'
+            else:
+                results['api'] = f'HTTP {resp.status_code}: {resp.text[:200]}'
         except Exception as e:
-            results['sdk'] = f'NG {type(e).__name__}: {str(e)}'
+            results['api'] = f'NG {type(e).__name__}: {str(e)}'
 
     return jsonify(results)
 

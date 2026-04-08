@@ -3,7 +3,9 @@ import os
 import re
 import time
 
-import anthropic
+import requests
+
+ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages'
 
 PROMPT = """\
 この動画フレームに表示されているテロップ（画面に重ねられたテキスト）を
@@ -28,71 +30,89 @@ def check_telop(frame_base64, timestamp_seconds):
         dict with keys: timestamp, telop_text, has_issue, issue_detail
         テロップが無い場合は None
     """
-    client = anthropic.Anthropic(
-        api_key=os.environ.get('ANTHROPIC_API_KEY'),
-        timeout=60.0,
-    )
+    api_key = os.environ.get('ANTHROPIC_API_KEY', '')
+    if not api_key:
+        raise Exception('ANTHROPIC_API_KEY が設定されていません。')
+
+    headers = {
+        'x-api-key': api_key,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+    }
+
+    payload = {
+        'model': 'claude-sonnet-4-20250514',
+        'max_tokens': 1024,
+        'messages': [{
+            'role': 'user',
+            'content': [
+                {
+                    'type': 'image',
+                    'source': {
+                        'type': 'base64',
+                        'media_type': 'image/jpeg',
+                        'data': frame_base64,
+                    },
+                },
+                {
+                    'type': 'text',
+                    'text': PROMPT,
+                },
+            ],
+        }],
+    }
 
     for attempt in range(3):
         try:
-            response = client.messages.create(
-                model='claude-sonnet-4-20250514',
-                max_tokens=1024,
-                messages=[{
-                    'role': 'user',
-                    'content': [
-                        {
-                            'type': 'image',
-                            'source': {
-                                'type': 'base64',
-                                'media_type': 'image/jpeg',
-                                'data': frame_base64,
-                            },
-                        },
-                        {
-                            'type': 'text',
-                            'text': PROMPT,
-                        },
-                    ],
-                }]
+            resp = requests.post(
+                ANTHROPIC_API_URL,
+                headers=headers,
+                json=payload,
+                timeout=60,
             )
 
-            text = response.content[0].text.strip()
+            if resp.status_code == 401:
+                raise Exception('APIキーが無効です。ANTHROPIC_API_KEY 環境変数を確認してください。')
+
+            if resp.status_code == 429:
+                if attempt < 2:
+                    time.sleep(10)
+                    continue
+                raise Exception('Claude API のレート制限に達しました。しばらく待ってから再試行してください。')
+
+            if resp.status_code == 400:
+                # 画像解析できないフレームはスキップ
+                return None
+
+            if resp.status_code != 200:
+                raise Exception(f'Claude API エラー: HTTP {resp.status_code} {resp.text[:200]}')
+
+            data = resp.json()
+            text = data['content'][0]['text'].strip()
 
             # レスポンスから JSON を抽出
             json_match = re.search(r'\{.*?\}', text, re.DOTALL)
             if not json_match:
                 return None
 
-            data = json.loads(json_match.group())
-            data['timestamp'] = _format_timestamp(timestamp_seconds)
-            return data
+            result = json.loads(json_match.group())
+            result['timestamp'] = _format_timestamp(timestamp_seconds)
+            return result
 
-        except json.JSONDecodeError:
-            return None
-        except anthropic.AuthenticationError:
-            raise Exception(
-                'APIキーが無効です。ANTHROPIC_API_KEY 環境変数を確認してください。'
-            )
-        except anthropic.RateLimitError:
-            # レート制限は少し待ってリトライ
-            if attempt < 2:
-                time.sleep(10)
-                continue
-            raise Exception(
-                'Claude API のレート制限に達しました。しばらく待ってから再試行してください。'
-            )
-        except anthropic.BadRequestError:
-            # 画像解析できないフレームはスキップ
-            return None
-        except (anthropic.APIConnectionError, anthropic.APIStatusError) as e:
-            # 接続エラーはリトライ
+        except requests.exceptions.ConnectionError as e:
             if attempt < 2:
                 time.sleep(5 * (attempt + 1))
                 continue
             raise Exception(f'Claude API 接続エラー（3回リトライ後）: {str(e)}')
-        except Exception as e:
-            raise Exception(f'Claude API エラー: {str(e)}')
+        except requests.exceptions.Timeout:
+            if attempt < 2:
+                time.sleep(5)
+                continue
+            raise Exception('Claude API タイムアウト（3回リトライ後）')
+        except json.JSONDecodeError:
+            return None
+        except Exception:
+            raise
 
 
 def _format_timestamp(seconds):
