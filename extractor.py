@@ -73,6 +73,11 @@ def extract_key_frames(video_path, progress_callback=None):
 
 
 def _frame_to_base64(frame):
-    """OpenCV フレームを JPEG base64 文字列に変換する。"""
-    _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    """OpenCV フレームを JPEG base64 文字列に変換する（最大1280px幅にリサイズ）。"""
+    h, w = frame.shape[:2]
+    max_width = 1280
+    if w > max_width:
+        scale = max_width / w
+        frame = cv2.resize(frame, (max_width, int(h * scale)), interpolation=cv2.INTER_AREA)
+    _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
     return base64.b64encode(buffer).decode('utf-8')

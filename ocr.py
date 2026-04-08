@@ -28,7 +28,10 @@ def check_telop(frame_base64, timestamp_seconds):
         dict with keys: timestamp, telop_text, has_issue, issue_detail
         テロップが無い場合は None
     """
-    client = anthropic.Anthropic(api_key=os.environ.get('ANTHROPIC_API_KEY'))
+    client = anthropic.Anthropic(
+        api_key=os.environ.get('ANTHROPIC_API_KEY'),
+        timeout=60.0,
+    )
 
     for attempt in range(3):
         try:
