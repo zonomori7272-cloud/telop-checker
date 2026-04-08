@@ -177,24 +177,48 @@ def process_video(task_id, filepath):
 @app.route('/test-api')
 def test_api():
     """Anthropic API への接続テスト用エンドポイント"""
+    import urllib.request
+    import ssl
     import anthropic as _anthropic
-    key = os.environ.get('ANTHROPIC_API_KEY', '')
-    if not key:
-        return jsonify({'error': 'ANTHROPIC_API_KEY が未設定'}), 500
+
+    results = {}
+
+    # ① 生のHTTP接続テスト
     try:
-        client = _anthropic.Anthropic(api_key=key, timeout=15.0)
-        resp = client.messages.create(
-            model='claude-sonnet-4-20250514',
-            max_tokens=10,
-            messages=[{'role': 'user', 'content': 'hi'}]
+        req = urllib.request.Request(
+            'https://api.anthropic.com',
+            headers={'User-Agent': 'test'}
         )
-        return jsonify({'ok': True, 'reply': resp.content[0].text})
-    except _anthropic.AuthenticationError:
-        return jsonify({'error': 'APIキーが無効'}), 401
-    except _anthropic.APIConnectionError as e:
-        return jsonify({'error': f'接続エラー: {str(e)}'}), 502
+        urllib.request.urlopen(req, timeout=10)
+        results['network'] = 'ok'
+    except urllib.error.HTTPError as e:
+        results['network'] = f'ok (HTTP {e.code})'
     except Exception as e:
-        return jsonify({'error': f'{type(e).__name__}: {str(e)}'}), 500
+        results['network'] = f'NG: {type(e).__name__}: {str(e)}'
+
+    # ② APIキー確認
+    key = os.environ.get('ANTHROPIC_API_KEY', '')
+    results['api_key_set'] = bool(key)
+    results['api_key_prefix'] = key[:12] if key else 'none'
+
+    # ③ SDK呼び出しテスト
+    if key:
+        try:
+            client = _anthropic.Anthropic(api_key=key, timeout=15.0)
+            resp = client.messages.create(
+                model='claude-sonnet-4-20250514',
+                max_tokens=10,
+                messages=[{'role': 'user', 'content': 'hi'}]
+            )
+            results['sdk'] = f'ok: {resp.content[0].text}'
+        except _anthropic.AuthenticationError:
+            results['sdk'] = 'NG: APIキーが無効'
+        except _anthropic.APIConnectionError as e:
+            results['sdk'] = f'NG 接続エラー: {str(e)}'
+        except Exception as e:
+            results['sdk'] = f'NG {type(e).__name__}: {str(e)}'
+
+    return jsonify(results)
 
 
 @app.route('/status/<task_id>')
