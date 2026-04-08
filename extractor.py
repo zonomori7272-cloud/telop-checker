@@ -73,11 +73,35 @@ def extract_key_frames(video_path, progress_callback=None):
 
 
 def _frame_to_base64(frame):
-    """OpenCV フレームを JPEG base64 文字列に変換する（最大1280px幅にリサイズ）。"""
+    """
+    テロップ認識用にフレームを処理してbase64に変換する。
+    - 下部40%を切り出してテロップ領域に集中
+    - 切り出し部分を拡大してテキストを読みやすくする
+    - JPEG品質92で高精度に保存
+    """
     h, w = frame.shape[:2]
-    max_width = 1280
-    if w > max_width:
-        scale = max_width / w
-        frame = cv2.resize(frame, (max_width, int(h * scale)), interpolation=cv2.INTER_AREA)
-    _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+
+    # テロップは主に下部に表示されるため下部40%を切り出し
+    crop_top = int(h * 0.55)
+    telop_region = frame[crop_top:h, 0:w]
+
+    # 切り出し部分を幅1280pxに拡大（小さすぎる場合のみ拡大）
+    th, tw = telop_region.shape[:2]
+    target_width = 1280
+    if tw < target_width:
+        scale = target_width / tw
+        telop_region = cv2.resize(
+            telop_region,
+            (target_width, int(th * scale)),
+            interpolation=cv2.INTER_CUBIC
+        )
+    elif tw > target_width:
+        scale = target_width / tw
+        telop_region = cv2.resize(
+            telop_region,
+            (target_width, int(th * scale)),
+            interpolation=cv2.INTER_AREA
+        )
+
+    _, buffer = cv2.imencode('.jpg', telop_region, [cv2.IMWRITE_JPEG_QUALITY, 92])
     return base64.b64encode(buffer).decode('utf-8')
