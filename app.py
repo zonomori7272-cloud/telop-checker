@@ -3,6 +3,7 @@ import uuid
 import csv
 import io
 import threading
+from datetime import datetime
 
 from flask import Flask, request, jsonify, render_template, Response
 from werkzeug.exceptions import RequestEntityTooLarge
@@ -18,6 +19,8 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # タスクの状態をメモリ上で管理
 tasks = {}
+# チェック履歴（最大50件）
+history = []
 
 
 @app.errorhandler(RequestEntityTooLarge)
@@ -57,6 +60,7 @@ def upload():
         'progress': 0,
         'message': '処理を開始しています...',
         'results': [],
+        'filename': file.filename,
     }
 
     thread = threading.Thread(
@@ -76,6 +80,7 @@ def upload_chunk():
     chunk_idx  = request.form.get('chunk_index')
     total      = request.form.get('total_chunks')
     chunk_file = request.files.get('chunk')
+    filename   = request.form.get('filename', 'unknown.mp4')
 
     if not task_id or chunk_idx is None or total is None or chunk_file is None:
         return jsonify({'error': 'パラメータが不正です'}), 400
@@ -108,6 +113,7 @@ def upload_chunk():
         'progress': 0,
         'message': '処理を開始しています...',
         'results': [],
+        'filename': filename,
     }
 
     thread = threading.Thread(
@@ -139,6 +145,7 @@ def process_video(task_id, filepath):
                 'message': '処理が完了しました（テロップが検出されませんでした）',
                 'results': [],
             })
+            _add_to_history(task_id)
             return
 
         results = []
@@ -152,7 +159,6 @@ def process_video(task_id, filepath):
             result = check_telop(frame_b64, timestamp)
 
             if result and result.get('telop_text', '').strip():
-                # 連続する同一テロップは重複除去
                 if result['telop_text'] != prev_text:
                     results.append(result)
                     prev_text = result['telop_text']
@@ -163,6 +169,7 @@ def process_video(task_id, filepath):
             'message': '処理が完了しました',
             'results': results,
         })
+        _add_to_history(task_id)
 
     except Exception as e:
         tasks[task_id].update({
@@ -174,11 +181,32 @@ def process_video(task_id, filepath):
             os.remove(filepath)
 
 
+def _add_to_history(task_id):
+    """完了タスクを履歴に追加する"""
+    task = tasks.get(task_id)
+    if not task:
+        return
+    results = task.get('results', [])
+    history.insert(0, {
+        'task_id': task_id,
+        'filename': task.get('filename', '不明'),
+        'completed_at': datetime.now().strftime('%Y-%m-%d %H:%M'),
+        'total': len(results),
+        'issues': sum(1 for r in results if r.get('has_issue')),
+    })
+    # 最大50件まで保持
+    if len(history) > 50:
+        history.pop()
+
+
+@app.route('/history')
+def get_history():
+    return jsonify(history)
+
+
 @app.route('/test-api')
 def test_api():
-    """Anthropic API への接続テスト用エンドポイント"""
     import requests as _requests
-
     results = {}
     key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
     results['api_key_set'] = bool(key)
@@ -240,7 +268,6 @@ def download_csv(task_id):
 
     output.seek(0)
 
-    # UTF-8 BOM付き（Excel で文字化けしない）
     return Response(
         '\ufeff' + output.getvalue(),
         mimetype='text/csv; charset=utf-8-sig',

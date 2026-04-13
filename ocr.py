@@ -8,28 +8,30 @@ import requests
 ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages'
 
 PROMPT = """\
-この動画フレームに表示されているテロップ（画面に重ねられたテキスト）を
-すべて読み取ってください。その後、日本語として誤字・脱字・
-表記ゆれがないかチェックし、問題があれば指摘してください。
-出力はJSON形式で：
-{
-  "telop_text": "読み取ったテキスト",
-  "has_issue": true/false,
-  "issue_detail": "問題の説明（問題なければ空文字）"
-}
+この画像はテレビ・YouTube動画のテロップ（字幕）部分です。
+画像に表示されているテキストをすべて、一文字ずつ丁寧に読み取ってください。
 
-テロップが存在しない場合は telop_text を空文字にしてください。
-JSONのみを出力してください。余分なテキストは不要です。"""
+【文字の読み取りで必ず守ること】
+- 似ている文字を正確に区別する（例：は／ば／ぱ、う／ぅ、ー／一、り／ソ、ン／ソ、シ／ツ、め／ぬ、る／ろ）
+- 濁点（゛）と半濁点（゜）の有無を注意深く確認する
+- 漢字は画数・形を正確に読む（例：土／士、己／已、未／末）
+- フォントが特殊でも、実際に書かれている文字そのものを読む
+- 不明な文字を前後の文脈で補完・推測しない
+
+【誤字チェックのルール】
+- 読み取りに少しでも自信がない文字が含まれる場合は has_issue を false にする
+- 明らかに間違っているとわかる場合のみ has_issue を true にする
+- 固有名詞・商品名・略語は誤字と判定しない
+
+出力はJSONのみ（余分なテキスト不要）：
+{
+  "telop_text": "読み取ったテキスト（テロップがなければ空文字）",
+  "has_issue": true または false,
+  "issue_detail": "明らかな誤字がある場合のみ説明（なければ空文字）"
+}"""
 
 
 def check_telop(frame_base64, timestamp_seconds):
-    """
-    フレーム画像を Claude Vision API に送り、テロップの読み取りと誤字チェックを行う。
-
-    Returns:
-        dict with keys: timestamp, telop_text, has_issue, issue_detail
-        テロップが無い場合は None
-    """
     api_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
     if not api_key:
         raise Exception('ANTHROPIC_API_KEY が設定されていません。')
@@ -81,7 +83,6 @@ def check_telop(frame_base64, timestamp_seconds):
                 raise Exception('Claude API のレート制限に達しました。しばらく待ってから再試行してください。')
 
             if resp.status_code == 400:
-                # 画像解析できないフレームはスキップ
                 return None
 
             if resp.status_code != 200:
@@ -90,7 +91,6 @@ def check_telop(frame_base64, timestamp_seconds):
             data = resp.json()
             text = data['content'][0]['text'].strip()
 
-            # レスポンスから JSON を抽出
             json_match = re.search(r'\{.*?\}', text, re.DOTALL)
             if not json_match:
                 return None
@@ -116,7 +116,6 @@ def check_telop(frame_base64, timestamp_seconds):
 
 
 def _format_timestamp(seconds):
-    """秒数を MM:SS または HH:MM:SS 形式に変換する。"""
     h = int(seconds // 3600)
     m = int((seconds % 3600) // 60)
     s = int(seconds % 60)

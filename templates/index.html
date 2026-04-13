@@ -212,8 +212,13 @@
 <body>
 
 <header>
-  <h1>テロップ誤字脱字チェッカー</h1>
-  <p>YouTube動画のテロップを自動で読み取り、誤字・脱字・表記ゆれをチェックします</p>
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+    <div>
+      <h1>テロップ誤字脱字チェッカー</h1>
+      <p>YouTube動画のテロップを自動で読み取り、誤字・脱字・表記ゆれをチェックします</p>
+    </div>
+    <button class="btn" id="history-btn" style="background:rgba(255,255,255,0.2);color:#fff;border:1.5px solid rgba(255,255,255,0.5);font-size:.85rem;padding:8px 18px">履歴を見る</button>
+  </div>
 </header>
 
 <main>
@@ -244,6 +249,12 @@
       <span class="spinner"></span>
       <span id="progress-text">動画をサーバーに送信しています...</span>
     </p>
+  </div>
+
+  <!-- 履歴カード -->
+  <div class="card" id="history-section" style="display:none">
+    <h2>チェック履歴</h2>
+    <div id="history-body"></div>
   </div>
 
   <!-- 結果カード -->
@@ -354,6 +365,7 @@
       formData.append('task_id',      taskId);
       formData.append('chunk_index',  i);
       formData.append('total_chunks', totalChunks);
+      formData.append('filename',     file.name);
 
       try {
         const res  = await fetch('/upload_chunk', { method: 'POST', body: formData });
@@ -513,11 +525,65 @@
   }
 
   // ---- セクション表示切り替え ----
+  const historySec = document.getElementById('history-section');
+  const historyBody = document.getElementById('history-body');
+
   function show(section) {
     uploadSec.style.display   = section === 'upload'   ? 'block' : 'none';
     progressSec.style.display = section === 'progress' ? 'block' : 'none';
     resultSec.style.display   = section === 'result'   ? 'block' : 'none';
     errorSec.style.display    = section === 'error'    ? 'block' : 'none';
+    historySec.style.display  = section === 'history'  ? 'block' : 'none';
+  }
+
+  // ---- 履歴 ----
+  document.getElementById('history-btn').addEventListener('click', async () => {
+    show('history');
+    historyBody.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:16px">読み込み中...</p>';
+    try {
+      const res  = await fetch('/history');
+      const data = await res.json();
+      if (!data.length) {
+        historyBody.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:24px">履歴がありません（サーバー再起動で消えます）</p>';
+        return;
+      }
+      historyBody.innerHTML = `
+        <div class="table-wrap"><table>
+          <thead><tr>
+            <th>日時</th><th>ファイル名</th><th>テロップ数</th><th>問題あり</th><th></th>
+          </tr></thead>
+          <tbody>
+            ${data.map(h => `
+              <tr>
+                <td style="white-space:nowrap">${escHtml(h.completed_at)}</td>
+                <td>${escHtml(h.filename)}</td>
+                <td style="text-align:center">${h.total}</td>
+                <td style="text-align:center">${h.issues > 0
+                  ? `<span class="badge badge-ng">${h.issues}件</span>`
+                  : '<span class="badge badge-ok">なし</span>'}</td>
+                <td><button class="btn btn-outline" style="padding:4px 14px;font-size:.8rem"
+                    onclick="showHistoryDetail('${h.task_id}')">詳細</button></td>
+              </tr>`).join('')}
+          </tbody>
+        </table></div>
+        <div class="actions" style="margin-top:16px">
+          <button class="btn btn-outline" onclick="show('upload')">← 戻る</button>
+        </div>`;
+    } catch(e) {
+      historyBody.innerHTML = '<p style="color:#dc2626">履歴の取得に失敗しました</p>';
+    }
+  });
+
+  async function showHistoryDetail(taskId) {
+    try {
+      const res  = await fetch(`/status/${taskId}`);
+      const data = await res.json();
+      if (data.error) { alert('この結果はすでに削除されています'); return; }
+      currentTaskId = taskId;
+      showResults(data.results);
+    } catch(e) {
+      alert('結果の取得に失敗しました');
+    }
   }
 
   function showError(msg) {
