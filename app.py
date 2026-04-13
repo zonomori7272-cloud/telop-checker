@@ -236,7 +236,8 @@ def process_youtube(task_id, url, filepath):
                 tasks[task_id]['message'] = f'ダウンロード中... {pct_raw}'
 
         ydl_opts = {
-            'format': 'best[ext=mp4]/mp4/best',
+            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best',
+            'merge_output_format': 'mp4',
             'outtmpl': filepath,
             'quiet': True,
             'progress_hooks': [progress_hook],
