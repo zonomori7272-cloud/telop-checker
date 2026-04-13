@@ -257,9 +257,16 @@ def process_youtube(task_id, url, filepath):
         process_video(task_id, filepath)
 
     except Exception as e:
+        err = str(e)
+        if 'Sign in' in err or 'bot' in err or 'cookies' in err:
+            msg = '⚠️ この動画はダウンロードできませんでした。\n限定公開・非公開動画はサーバーからアクセスできません。\nMP4ファイルをダウンロードして「ファイルアップロード」タブから試してください。'
+        elif 'format' in err.lower():
+            msg = '動画フォーマットの取得に失敗しました。別の動画で試してみてください。'
+        else:
+            msg = f'YouTubeダウンロードエラー: {err}'
         tasks[task_id].update({
             'status': 'error',
-            'message': f'YouTubeダウンロードエラー: {str(e)}',
+            'message': msg,
         })
 
 
