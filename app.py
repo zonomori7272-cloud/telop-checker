@@ -17,6 +17,8 @@ app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024 * 1024  # 1GB
 UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+COOKIES_PATH = os.path.join(os.path.dirname(__file__), 'yt_cookies.txt')
+
 # タスクの状態をメモリ上で管理
 tasks = {}
 # チェック履歴（最大50件）
@@ -189,6 +191,25 @@ def process_video(task_id, filepath):
             os.remove(filepath)
 
 
+@app.route('/upload_cookies', methods=['POST'])
+def upload_cookies():
+    try:
+        if 'cookies' not in request.files:
+            return jsonify({'error': 'ファイルが見つかりません'}), 400
+        file = request.files['cookies']
+        if not file.filename.lower().endswith('.txt'):
+            return jsonify({'error': '.txtファイルを選択してください'}), 400
+        file.save(COOKIES_PATH)
+        return jsonify({'ok': True, 'message': 'Cookieを保存しました'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/cookie_status')
+def cookie_status():
+    return jsonify({'has_cookies': os.path.exists(COOKIES_PATH)})
+
+
 @app.route('/start_youtube', methods=['POST'])
 def start_youtube():
     data = request.get_json(force=True)
@@ -246,6 +267,9 @@ def process_youtube(task_id, url, filepath):
                 'User-Agent': 'com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)',
             },
         }
+
+        if os.path.exists(COOKIES_PATH):
+            ydl_opts['cookiefile'] = COOKIES_PATH
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)

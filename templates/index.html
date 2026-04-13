@@ -312,6 +312,27 @@
         <input type="url" id="yt-url-input" placeholder="https://www.youtube.com/watch?v=..." />
         <button class="btn btn-primary" id="yt-start-btn" onclick="startYoutube()">チェックを開始する</button>
       </div>
+
+      <!-- Cookie認証セクション -->
+      <div style="margin-top:10px">
+        <span id="cookie-status-text" style="font-size:.85rem;color:#64748b">🍪 Cookie: 未設定</span>
+        <button onclick="toggleCookieSetup()" id="cookie-toggle-btn"
+          style="margin-left:10px;font-size:.8rem;color:#1e40af;background:none;border:none;cursor:pointer;text-decoration:underline;padding:0">設定する</button>
+      </div>
+
+      <div id="cookie-setup-section" style="display:none;margin-top:10px;padding:12px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:.85rem">
+        <p style="color:#475569;line-height:1.7;white-space:pre-line">【手順】
+1. Chromeに「Get cookies.txt LOCALLY」拡張機能をインストール
+2. YouTubeにログインした状態でyoutube.comを開く
+3. 拡張機能アイコンをクリック→「Export」でcookies.txtをダウンロード
+4. 下のボタンからそのファイルをアップロード</p>
+        <div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <input type="file" id="cookies-file-input" accept=".txt"
+            style="font-size:.85rem;color:#475569" />
+          <button class="btn btn-primary" onclick="uploadCookies()"
+            style="padding:6px 16px;font-size:.85rem">アップロード</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -709,6 +730,50 @@
     document.getElementById('tab-youtube').classList.toggle('active', tab === 'youtube');
     document.getElementById('tab-file-btn').classList.toggle('active', tab === 'file');
     document.getElementById('tab-yt-btn').classList.toggle('active', tab === 'youtube');
+    if (tab === 'youtube') checkCookieStatus();
+  }
+
+  // ---- Cookie認証 ----
+  function toggleCookieSetup() {
+    const sec = document.getElementById('cookie-setup-section');
+    const btn = document.getElementById('cookie-toggle-btn');
+    const visible = sec.style.display !== 'none';
+    sec.style.display = visible ? 'none' : 'block';
+    btn.textContent = visible ? '設定する' : '閉じる';
+  }
+
+  async function checkCookieStatus() {
+    try {
+      const res = await fetch('/cookie_status');
+      const data = await res.json();
+      const el = document.getElementById('cookie-status-text');
+      if (el) el.textContent = data.has_cookies ? '🍪 Cookie: 設定済み ✅' : '🍪 Cookie: 未設定';
+      const btn = document.getElementById('cookie-toggle-btn');
+      if (btn && !document.getElementById('cookie-setup-section').style.display !== 'none') {
+        btn.textContent = data.has_cookies ? '変更する' : '設定する';
+      }
+    } catch(e) {}
+  }
+
+  async function uploadCookies() {
+    const input = document.getElementById('cookies-file-input');
+    if (!input.files[0]) { alert('ファイルを選択してください'); return; }
+    const formData = new FormData();
+    formData.append('cookies', input.files[0]);
+    try {
+      const res = await fetch('/upload_cookies', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (data.ok) {
+        alert('✅ Cookieを保存しました！限定公開動画が取得できるようになります。');
+        checkCookieStatus();
+        document.getElementById('cookie-setup-section').style.display = 'none';
+        document.getElementById('cookie-toggle-btn').textContent = '変更する';
+      } else {
+        alert('エラー: ' + (data.error || '保存に失敗しました'));
+      }
+    } catch(e) {
+      alert('アップロードに失敗しました');
+    }
   }
 
   // ---- YouTube チェック開始 ----
