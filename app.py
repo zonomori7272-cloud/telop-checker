@@ -257,8 +257,7 @@ def process_youtube(task_id, url, filepath):
                 tasks[task_id]['message'] = f'ダウンロード中... {pct_raw}'
 
         ydl_opts = {
-            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best',
-            'merge_output_format': 'mp4',
+            'format': 'best',
             'outtmpl': filepath,
             'quiet': True,
             'progress_hooks': [progress_hook],
@@ -270,6 +269,11 @@ def process_youtube(task_id, url, filepath):
 
         if os.path.exists(COOKIES_PATH):
             ydl_opts['cookiefile'] = COOKIES_PATH
+
+        # ファイル拡張子に関わらずmp4として保存
+        actual_filepath = filepath
+        if not actual_filepath.endswith('.mp4'):
+            actual_filepath = filepath
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
