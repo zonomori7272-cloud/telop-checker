@@ -129,7 +129,7 @@ def upload_chunk():
 def process_video(task_id, filepath):
     try:
         from extractor import extract_key_frames
-        from ocr import check_telop
+        from ocr import check_telop, check_consistency
 
         def progress_cb(p, msg):
             tasks[task_id]['progress'] = p
@@ -144,6 +144,7 @@ def process_video(task_id, filepath):
                 'progress': 100,
                 'message': '処理が完了しました（テロップが検出されませんでした）',
                 'results': [],
+                'consistency_issues': [],
             })
             _add_to_history(task_id)
             return
@@ -153,7 +154,7 @@ def process_video(task_id, filepath):
         prev_text = None
 
         for i, (timestamp, frame_b64) in enumerate(frames):
-            tasks[task_id]['progress'] = 50 + int((i + 1) / total * 50)
+            tasks[task_id]['progress'] = 50 + int((i + 1) / total * 45)
             tasks[task_id]['message'] = f'テロップを解析中... ({i + 1} / {total} フレーム)'
 
             result = check_telop(frame_b64, timestamp)
@@ -163,11 +164,18 @@ def process_video(task_id, filepath):
                     results.append(result)
                     prev_text = result['telop_text']
 
+        # 表記ゆれチェック
+        tasks[task_id]['progress'] = 96
+        tasks[task_id]['message'] = '表記ゆれをチェック中...'
+        telop_texts = [r['telop_text'] for r in results if r.get('telop_text', '').strip()]
+        consistency_result = check_consistency(telop_texts)
+
         tasks[task_id].update({
             'status': 'done',
             'progress': 100,
             'message': '処理が完了しました',
             'results': results,
+            'consistency_issues': consistency_result,
         })
         _add_to_history(task_id)
 
@@ -179,6 +187,75 @@ def process_video(task_id, filepath):
     finally:
         if os.path.exists(filepath):
             os.remove(filepath)
+
+
+@app.route('/start_youtube', methods=['POST'])
+def start_youtube():
+    data = request.get_json(force=True)
+    url = (data or {}).get('url', '').strip()
+    if not url:
+        return jsonify({'error': 'URLを指定してください。'}), 400
+
+    if not os.environ.get('ANTHROPIC_API_KEY', '').strip():
+        return jsonify({'error': 'ANTHROPIC_API_KEY が設定されていません。'}), 500
+
+    task_id = str(uuid.uuid4())
+    filepath = os.path.join(UPLOAD_FOLDER, f'{task_id}.mp4')
+
+    tasks[task_id] = {
+        'status': 'processing',
+        'progress': 0,
+        'message': 'ダウンロードを開始しています...',
+        'results': [],
+        'filename': url,
+    }
+
+    thread = threading.Thread(
+        target=process_youtube,
+        args=(task_id, url, filepath),
+        daemon=True
+    )
+    thread.start()
+
+    return jsonify({'task_id': task_id})
+
+
+def process_youtube(task_id, url, filepath):
+    try:
+        import yt_dlp
+
+        def progress_hook(d):
+            if d['status'] == 'downloading':
+                pct_raw = d.get('_percent_str', '').strip()
+                # Parse percentage number from string like "45.2%"
+                try:
+                    pct_num = float(pct_raw.replace('%', '').strip())
+                    tasks[task_id]['progress'] = int(pct_num * 0.3)  # scale to 0-30
+                except Exception:
+                    pass
+                tasks[task_id]['message'] = f'ダウンロード中... {pct_raw}'
+
+        ydl_opts = {
+            'format': 'best[ext=mp4]/mp4/best',
+            'outtmpl': filepath,
+            'quiet': True,
+            'progress_hooks': [progress_hook],
+        }
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            # Update filename with video title if available
+            title = info.get('title', url) if info else url
+            tasks[task_id]['filename'] = title
+
+        # After download, process the video
+        process_video(task_id, filepath)
+
+    except Exception as e:
+        tasks[task_id].update({
+            'status': 'error',
+            'message': f'YouTubeダウンロードエラー: {str(e)}',
+        })
 
 
 def _add_to_history(task_id):

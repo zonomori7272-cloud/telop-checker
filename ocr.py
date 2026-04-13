@@ -23,11 +23,17 @@ PROMPT = """\
 - 明らかに間違っているとわかる場合のみ has_issue を true にする
 - 固有名詞・商品名・略語は誤字と判定しない
 
+【NG表現チェックのルール】
+- 差別用語・放送禁止用語・不適切表現が含まれる場合は has_issue を true、issue_type を "ng" にする
+- 誤字・脱字の場合は issue_type を "typo" にする
+- 問題がない場合は issue_type を "" にする
+
 出力はJSONのみ（余分なテキスト不要）：
 {
   "telop_text": "読み取ったテキスト（テロップがなければ空文字）",
   "has_issue": true または false,
-  "issue_detail": "明らかな誤字がある場合のみ説明（なければ空文字）"
+  "issue_type": "typo" または "ng" または "",
+  "issue_detail": "問題がある場合のみ説明（なければ空文字）"
 }"""
 
 
@@ -113,6 +119,82 @@ def check_telop(frame_base64, timestamp_seconds):
             return None
         except Exception:
             raise
+
+
+def check_consistency(telop_texts: list) -> list:
+    """
+    テロップテキストのリストを受け取り、表記ゆれをまとめて検出する。
+    Returns list of {"original": str, "variants": [str], "suggestion": str, "detail": str}
+    """
+    if not telop_texts:
+        return []
+
+    api_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
+    if not api_key:
+        return []
+
+    headers = {
+        'x-api-key': api_key,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+    }
+
+    texts_joined = '\n'.join(f'- {t}' for t in telop_texts)
+    prompt = f"""\
+以下はテレビ・YouTube動画に登場したテロップテキストの一覧です。
+表記ゆれ（同じ概念が異なる表記で使われているもの、例：「AI」と「A.I.」、「YouTube」と「ユーチューブ」）を検出してください。
+
+テロップ一覧:
+{texts_joined}
+
+【ルール】
+- 同じ概念・固有名詞・略語が複数の異なる表記で登場している場合のみ報告する
+- 単なる言い換えや文脈が違う表現は表記ゆれとしない
+- 表記ゆれがなければ空配列を返す
+
+出力はJSONのみ（余分なテキスト不要）：
+[
+  {{
+    "original": "最初に登場した表記",
+    "variants": ["別の表記1", "別の表記2"],
+    "suggestion": "推奨する統一表記",
+    "detail": "なぜ表記ゆれと判断したかの簡単な説明"
+  }}
+]"""
+
+    payload = {
+        'model': 'claude-sonnet-4-20250514',
+        'max_tokens': 2048,
+        'messages': [{
+            'role': 'user',
+            'content': prompt,
+        }],
+    }
+
+    try:
+        resp = requests.post(
+            ANTHROPIC_API_URL,
+            headers=headers,
+            json=payload,
+            timeout=60,
+        )
+        if resp.status_code != 200:
+            return []
+
+        data = resp.json()
+        text = data['content'][0]['text'].strip()
+
+        # Extract JSON array
+        json_match = re.search(r'\[.*\]', text, re.DOTALL)
+        if not json_match:
+            return []
+
+        result = json.loads(json_match.group())
+        if isinstance(result, list):
+            return result
+        return []
+    except Exception:
+        return []
 
 
 def _format_timestamp(seconds):

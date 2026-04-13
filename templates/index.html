@@ -184,9 +184,68 @@
       font-size: .78rem;
       font-weight: 600;
     }
-    .badge-ok   { background: #dcfce7; color: #16a34a; }
-    .badge-ng   { background: #fee2e2; color: #dc2626; }
+    .badge-ok      { background: #dcfce7; color: #16a34a; }
+    .badge-ng      { background: #fee2e2; color: #dc2626; }
+    .badge-warning { background: #fff7ed; color: #c2410c; }
     tr.has-issue td { background: #fff7f7; }
+
+    /* ---- タブ ---- */
+    .tab-bar {
+      display: flex;
+      gap: 0;
+      border-bottom: 2px solid #e2e8f0;
+      margin-bottom: 20px;
+    }
+    .tab-btn {
+      padding: 8px 20px;
+      border: none;
+      background: none;
+      font-size: .9rem;
+      font-weight: 600;
+      color: #64748b;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: color .15s;
+    }
+    .tab-btn.active {
+      color: #1e40af;
+      border-bottom-color: #1e40af;
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ---- YouTube 入력 ---- */
+    .yt-input-wrap {
+      display: flex;
+      gap: 10px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+    .yt-input-wrap input {
+      flex: 1;
+      min-width: 0;
+      padding: 10px 14px;
+      border: 1.5px solid #cbd5e1;
+      border-radius: 8px;
+      font-size: .95rem;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .yt-input-wrap input:focus { border-color: #1e40af; }
+
+    /* ---- 表記ゆれセクション ---- */
+    .consistency-section {
+      margin-top: 28px;
+      border-top: 2px solid #e2e8f0;
+      padding-top: 20px;
+    }
+    .consistency-section h3 {
+      font-size: .95rem;
+      font-weight: 700;
+      color: #b45309;
+      margin-bottom: 12px;
+    }
 
     .actions {
       display: flex;
@@ -227,16 +286,33 @@
   <div class="card" id="upload-section">
     <h2>動画をアップロード</h2>
 
-    <div id="drop-zone">
-      <span class="icon">🎬</span>
-      <p>MP4ファイルをここにドラッグ＆ドロップ<br>または下のボタンでファイルを選択</p>
-      <p id="file-name-display" class="file-name" style="display:none"></p>
-      <input type="file" id="file-input" accept=".mp4,video/mp4">
+    <div class="tab-bar">
+      <button class="tab-btn active" id="tab-file-btn" onclick="switchTab('file')">📁 ファイルアップロード</button>
+      <button class="tab-btn" id="tab-yt-btn" onclick="switchTab('youtube')">🎬 YouTube URL</button>
     </div>
 
-    <button class="btn btn-primary" id="start-btn" disabled>
-      チェックを開始する
-    </button>
+    <!-- ファイルアップロードタブ -->
+    <div class="tab-panel active" id="tab-file">
+      <div id="drop-zone">
+        <span class="icon">🎬</span>
+        <p>MP4ファイルをここにドラッグ＆ドロップ<br>または下のボタンでファイルを選択</p>
+        <p id="file-name-display" class="file-name" style="display:none"></p>
+        <input type="file" id="file-input" accept=".mp4,video/mp4">
+      </div>
+
+      <button class="btn btn-primary" id="start-btn" disabled style="margin-top:20px;display:block;width:100%;text-align:center">
+        チェックを開始する
+      </button>
+    </div>
+
+    <!-- YouTube URLタブ -->
+    <div class="tab-panel" id="tab-youtube">
+      <p style="color:#475569;font-size:.9rem;margin-bottom:12px">YouTube動画のURLを入力してください。動画をダウンロードしてテロップをチェックします。</p>
+      <div class="yt-input-wrap">
+        <input type="url" id="yt-url-input" placeholder="https://www.youtube.com/watch?v=..." />
+        <button class="btn btn-primary" id="yt-start-btn" onclick="startYoutube()">チェックを開始する</button>
+      </div>
+    </div>
   </div>
 
   <!-- プログレスカード -->
@@ -426,7 +502,7 @@
 
       if (data.status === 'done') {
         clearInterval(pollTimer);
-        showResults(data.results);
+        showResults(data.results, data.consistency_issues || []);
       } else if (data.status === 'error') {
         clearInterval(pollTimer);
         showError(data.message);
@@ -438,7 +514,7 @@
   }
 
   // ---- 結果表示 ----
-  function showResults(results) {
+  function showResults(results, consistency_issues) {
     const total   = results.length;
     const issues  = results.filter(r => r.has_issue).length;
 
@@ -461,14 +537,24 @@
       resultBody.innerHTML += buildTable(results);
     }
 
+    // 表記ゆれセクション
+    if (consistency_issues && consistency_issues.length > 0) {
+      resultBody.innerHTML += buildConsistencyTable(consistency_issues);
+    }
+
     show('result');
   }
 
   function buildTable(results) {
     const rows = results.map(r => {
-      const badge = r.has_issue
-        ? '<span class="badge badge-ng">問題あり</span>'
-        : '<span class="badge badge-ok">問題なし</span>';
+      let badge;
+      if (!r.has_issue) {
+        badge = '<span class="badge badge-ok">問題なし</span>';
+      } else if (r.issue_type === 'ng') {
+        badge = '<span class="badge badge-warning">NG表現</span>';
+      } else {
+        badge = '<span class="badge badge-ng">誤字</span>';
+      }
       const rowClass = r.has_issue ? ' class="has-issue"' : '';
       const detail = r.issue_detail
         ? escHtml(r.issue_detail)
@@ -490,6 +576,31 @@
       </tr></thead>
       <tbody>${rows}</tbody>
     </table></div>`;
+  }
+
+  function buildConsistencyTable(issues) {
+    const rows = issues.map(item => {
+      const variants = (item.variants || []).map(v => escHtml(v)).join('、');
+      return `<tr>
+        <td>${escHtml(item.original || '')}</td>
+        <td>${variants}</td>
+        <td><strong>${escHtml(item.suggestion || '')}</strong></td>
+        <td>${escHtml(item.detail || '')}</td>
+      </tr>`;
+    }).join('');
+
+    return `<div class="consistency-section">
+      <h3>⚠️ 表記ゆれチェック（${issues.length}件）</h3>
+      <div class="table-wrap"><table>
+        <thead><tr>
+          <th>使用表記</th>
+          <th>別の表記</th>
+          <th>推奨</th>
+          <th>説明</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+    </div>`;
   }
 
   function escHtml(str) {
@@ -581,7 +692,7 @@
       const data = await res.json();
       if (data.error) { alert('この結果はすでに削除されています'); return; }
       currentTaskId = taskId;
-      showResults(data.results);
+      showResults(data.results, data.consistency_issues || []);
     } catch(e) {
       alert('結果の取得に失敗しました');
     }
@@ -590,6 +701,48 @@
   function showError(msg) {
     errorMessage.textContent = msg;
     show('error');
+  }
+
+  // ---- タブ切り替え ----
+  function switchTab(tab) {
+    document.getElementById('tab-file').classList.toggle('active', tab === 'file');
+    document.getElementById('tab-youtube').classList.toggle('active', tab === 'youtube');
+    document.getElementById('tab-file-btn').classList.toggle('active', tab === 'file');
+    document.getElementById('tab-yt-btn').classList.toggle('active', tab === 'youtube');
+  }
+
+  // ---- YouTube チェック開始 ----
+  async function startYoutube() {
+    const urlInput = document.getElementById('yt-url-input');
+    const url = urlInput.value.trim();
+    if (!url) {
+      alert('YouTube URLを入力してください。');
+      return;
+    }
+
+    show('progress');
+    document.getElementById('progress-title').textContent = 'YouTube動画を処理中...';
+    progressBar.style.width = '0%';
+    progressText.textContent = 'ダウンロードを開始しています...';
+
+    try {
+      const res  = await fetch('/start_youtube', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        showError(data.error || 'YouTube処理の開始に失敗しました。');
+        return;
+      }
+
+      currentTaskId = data.task_id;
+      startPolling();
+    } catch (err) {
+      showError('YouTube処理の開始中に接続エラーが発生しました。');
+    }
   }
 
   // 初期表示

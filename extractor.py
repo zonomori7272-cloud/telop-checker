@@ -103,5 +103,17 @@ def _frame_to_base64(frame):
             interpolation=cv2.INTER_AREA
         )
 
+    # CLAHE contrast enhancement on L channel (LAB color space)
+    lab = cv2.cvtColor(telop_region, cv2.COLOR_BGR2LAB)
+    l_channel, a_channel, b_channel = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    l_channel = clahe.apply(l_channel)
+    lab = cv2.merge((l_channel, a_channel, b_channel))
+    telop_region = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+
+    # Sharpening kernel
+    kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], dtype=np.float32)
+    telop_region = cv2.filter2D(telop_region, -1, kernel)
+
     _, buffer = cv2.imencode('.jpg', telop_region, [cv2.IMWRITE_JPEG_QUALITY, 92])
     return base64.b64encode(buffer).decode('utf-8')
