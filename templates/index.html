@@ -764,7 +764,16 @@
       const res = await fetch('/upload_cookies', { method: 'POST', body: formData });
       const data = await res.json();
       if (data.ok) {
-        alert('✅ Cookieを保存しました！限定公開動画が取得できるようになります。');
+        // b64をRailway環境変数用にコピーできるよう表示
+        if (data.b64) {
+          const copied = await navigator.clipboard.writeText(data.b64).then(() => true).catch(() => false);
+          const msg = copied
+            ? '✅ Cookieを保存しました！\n\nRailwayの環境変数 YT_COOKIES_B64 にこの値を設定すると、再デプロイ後も消えなくなります（クリップボードにコピー済み）。\n\nRailway → Variables → YT_COOKIES_B64 に貼り付けてください。'
+            : '✅ Cookieを保存しました！\n\n再デプロイ後も使い続けるには、Railway → Variables → YT_COOKIES_B64 に以下の値を設定してください:\n\n' + data.b64;
+          alert(msg);
+        } else {
+          alert('✅ Cookieを保存しました！');
+        }
         checkCookieStatus();
         document.getElementById('cookie-setup-section').style.display = 'none';
         document.getElementById('cookie-toggle-btn').textContent = '変更する';

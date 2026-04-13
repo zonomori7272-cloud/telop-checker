@@ -19,6 +19,18 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 COOKIES_PATH = os.path.join(os.path.dirname(__file__), 'yt_cookies.txt')
 
+
+def _ensure_cookies_file():
+    """環境変数 YT_COOKIES_B64 があればファイルに書き出す"""
+    b64 = os.environ.get('YT_COOKIES_B64', '').strip()
+    if b64 and not os.path.exists(COOKIES_PATH):
+        import base64
+        try:
+            with open(COOKIES_PATH, 'wb') as f:
+                f.write(base64.b64decode(b64))
+        except Exception:
+            pass
+
 # タスクの状態をメモリ上で管理
 tasks = {}
 # チェック履歴（最大50件）
@@ -193,20 +205,27 @@ def process_video(task_id, filepath):
 
 @app.route('/upload_cookies', methods=['POST'])
 def upload_cookies():
+    import base64
     try:
         if 'cookies' not in request.files:
             return jsonify({'error': 'ファイルが見つかりません'}), 400
         file = request.files['cookies']
         if not file.filename.lower().endswith('.txt'):
             return jsonify({'error': '.txtファイルを選択してください'}), 400
-        file.save(COOKIES_PATH)
-        return jsonify({'ok': True, 'message': 'Cookieを保存しました'})
+        content = file.read()
+        # ファイルに保存
+        with open(COOKIES_PATH, 'wb') as f:
+            f.write(content)
+        # 環境変数用のBase64も返す（Railwayに手動設定してもらうため）
+        b64 = base64.b64encode(content).decode('utf-8')
+        return jsonify({'ok': True, 'message': 'Cookieを保存しました', 'b64': b64})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
 
 @app.route('/cookie_status')
 def cookie_status():
+    _ensure_cookies_file()
     return jsonify({'has_cookies': os.path.exists(COOKIES_PATH)})
 
 
@@ -274,6 +293,7 @@ def process_youtube(task_id, url, filepath):
             }],
         }
 
+        _ensure_cookies_file()
         if os.path.exists(COOKIES_PATH):
             ydl_opts['cookiefile'] = COOKIES_PATH
 
