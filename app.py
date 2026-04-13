@@ -256,30 +256,40 @@ def process_youtube(task_id, url, filepath):
                     pass
                 tasks[task_id]['message'] = f'ダウンロード中... {pct_raw}'
 
+        # 一時ファイルはtask_idのみ（拡張子なし）でyt-dlpに任せる
+        tmp_base = os.path.join(UPLOAD_FOLDER, task_id)
+
         ydl_opts = {
-            'format': 'best',
-            'outtmpl': filepath,
+            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best[ext=mp4]/best',
+            'outtmpl': tmp_base + '.%(ext)s',
             'quiet': True,
             'progress_hooks': [progress_hook],
             'extractor_args': {'youtube': {'player_client': ['ios', 'web']}},
             'http_headers': {
                 'User-Agent': 'com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)',
             },
+            'postprocessors': [{
+                'key': 'FFmpegVideoConvertor',
+                'preferedformat': 'mp4',
+            }],
         }
 
         if os.path.exists(COOKIES_PATH):
             ydl_opts['cookiefile'] = COOKIES_PATH
 
-        # ファイル拡張子に関わらずmp4として保存
-        actual_filepath = filepath
-        if not actual_filepath.endswith('.mp4'):
-            actual_filepath = filepath
-
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            # Update filename with video title if available
             title = info.get('title', url) if info else url
             tasks[task_id]['filename'] = title
+
+        # ダウンロードされたファイルを探してfilepathに統一
+        import glob
+        candidates = glob.glob(tmp_base + '.*')
+        if not candidates:
+            raise Exception('動画ファイルのダウンロードに失敗しました。')
+        downloaded = candidates[0]
+        if downloaded != filepath:
+            os.rename(downloaded, filepath)
 
         # After download, process the video
         process_video(task_id, filepath)
