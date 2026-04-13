@@ -240,6 +240,10 @@ def process_youtube(task_id, url, filepath):
             'outtmpl': filepath,
             'quiet': True,
             'progress_hooks': [progress_hook],
+            'extractor_args': {'youtube': {'player_client': ['ios', 'web']}},
+            'http_headers': {
+                'User-Agent': 'com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)',
+            },
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
