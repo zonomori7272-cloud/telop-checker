@@ -142,7 +142,7 @@ def upload_chunk():
 
 def process_video(task_id, filepath):
     try:
-        from extractor import extract_key_frames
+        from frame_extractor import extract_key_frames
         from ocr import check_telop, check_consistency
 
         def progress_cb(p, msg):
