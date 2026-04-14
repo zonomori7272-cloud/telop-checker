@@ -819,7 +819,18 @@
     }
   }
 
-  // 初期表示
+  // ---- スリープ復帰時にポーリング再開 ----
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && currentTaskId) {
+      // すぐに1回ポーリングして状態確認
+      poll();
+      // まだ処理中なら定期ポーリングも再開
+      clearInterval(pollTimer);
+      pollTimer = setInterval(poll, 2000);
+    }
+  });
+
+  // ---- 初期表示 ----
   show('upload');
 </script>
 </body>
