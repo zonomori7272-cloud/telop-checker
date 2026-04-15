@@ -2,13 +2,15 @@ import cv2
 import numpy as np
 import base64
 
-# 前後フレームの差分がこの値を超えたらテロップ変化と判定
-DIFF_THRESHOLD = 12
+# テロップ領域の差分がこの値を超えたらテロップ変化と判定（全体ではなくテロップ領域で比較）
+TELOP_DIFF_THRESHOLD = 8
+# テロップ領域: フレーム下部何%を使うか
+TELOP_CROP_TOP_RATIO = 0.55
 
 
 def extract_key_frames(video_path, progress_callback=None):
     """
-    動画から1秒ごとにフレームを抽出し、前後フレームの差分が大きいフレームだけを返す。
+    動画から1秒ごとにフレームを抽出し、テロップ領域の差分が大きいフレームだけを返す。
 
     Returns:
         list of (timestamp_seconds: float, base64_image: str)
@@ -28,7 +30,7 @@ def extract_key_frames(video_path, progress_callback=None):
 
     duration = total_frames / fps
     key_frames = []
-    prev_gray = None
+    prev_telop_gray = None
     second = 0.0
 
     while True:
@@ -45,20 +47,24 @@ def extract_key_frames(video_path, progress_callback=None):
             pct = int((second / duration) * 45)
             progress_callback(pct, f'フレームを抽出中... {int(second)}秒 / {int(duration)}秒')
 
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        # テロップ領域（下部）だけで差分を比較する
+        h, w = frame.shape[:2]
+        crop_top = int(h * TELOP_CROP_TOP_RATIO)
+        telop_area = frame[crop_top:h, 0:w]
+        telop_gray = cv2.cvtColor(telop_area, cv2.COLOR_BGR2GRAY)
 
         include = False
-        if prev_gray is None:
+        if prev_telop_gray is None:
             include = True  # 最初のフレームは必ず含める
         else:
-            diff = cv2.absdiff(gray, prev_gray)
-            if np.mean(diff) > DIFF_THRESHOLD:
+            diff = cv2.absdiff(telop_gray, prev_telop_gray)
+            if np.mean(diff) > TELOP_DIFF_THRESHOLD:
                 include = True
 
         if include:
             key_frames.append((second, _frame_to_base64(frame)))
 
-        prev_gray = gray
+        prev_telop_gray = telop_gray
         second += 1.0
 
     cap.release()
