@@ -288,7 +288,7 @@
 
     <div class="tab-bar">
       <button class="tab-btn active" id="tab-file-btn" onclick="switchTab('file')">📁 ファイルアップロード</button>
-      <button class="tab-btn" id="tab-yt-btn" onclick="switchTab('youtube')">🎬 YouTube URL</button>
+      <button class="tab-btn" id="tab-yt-btn" onclick="switchTab('youtube')">🔗 URL入力</button>
     </div>
 
     <!-- ファイルアップロードタブ -->
@@ -307,9 +307,9 @@
 
     <!-- YouTube URLタブ -->
     <div class="tab-panel" id="tab-youtube">
-      <p style="color:#475569;font-size:.9rem;margin-bottom:12px">YouTube動画のURLを入力してください。動画をダウンロードしてテロップをチェックします。</p>
+      <p style="color:#475569;font-size:.9rem;margin-bottom:12px">YouTube または Google Drive のURLに対応</p>
       <div class="yt-input-wrap">
-        <input type="url" id="yt-url-input" placeholder="https://www.youtube.com/watch?v=..." />
+        <input type="url" id="yt-url-input" placeholder="YouTube または Google Drive の URL を貼り付け" />
         <button class="btn btn-primary" id="yt-start-btn" onclick="startYoutube()">チェックを開始する</button>
       </div>
 
@@ -785,37 +785,31 @@
     }
   }
 
-  // ---- YouTube チェック開始 ----
+  // ---- URL チェック開始（YouTube / Google Drive 共通） ----
   async function startYoutube() {
-    const urlInput = document.getElementById('yt-url-input');
-    const url = urlInput.value.trim();
-    if (!url) {
-      alert('YouTube URLを入力してください。');
-      return;
-    }
+    const url = document.getElementById('yt-url-input').value.trim();
+    if (!url) { alert('URLを入力してください'); return; }
 
     show('progress');
-    document.getElementById('progress-title').textContent = 'YouTube動画を処理中...';
-    progressBar.style.width = '0%';
+    document.getElementById('progress-title').textContent = 'ダウンロード中...';
+    progressBar.style.width = '10%';
     progressText.textContent = 'ダウンロードを開始しています...';
 
+    const isGdrive = url.includes('drive.google.com');
+    const endpoint = isGdrive ? '/start_gdrive' : '/start_youtube';
+
     try {
-      const res  = await fetch('/start_youtube', {
+      const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({url})
       });
       const data = await res.json();
-
-      if (!res.ok || data.error) {
-        showError(data.error || 'YouTube処理の開始に失敗しました。');
-        return;
-      }
-
+      if (!res.ok || data.error) { showError(data.error || 'エラーが発生しました'); return; }
       currentTaskId = data.task_id;
       startPolling();
-    } catch (err) {
-      showError('YouTube処理の開始中に接続エラーが発生しました。');
+    } catch(e) {
+      showError('サーバーへの接続に失敗しました');
     }
   }
 

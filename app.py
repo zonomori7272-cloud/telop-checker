@@ -260,6 +260,68 @@ def start_youtube():
     return jsonify({'task_id': task_id})
 
 
+@app.route('/start_gdrive', methods=['POST'])
+def start_gdrive():
+    data = request.get_json(force=True)
+    url = (data or {}).get('url', '').strip()
+    if not url:
+        return jsonify({'error': 'URLを指定してください。'}), 400
+
+    if 'drive.google.com' not in url:
+        return jsonify({'error': '有効なGoogle Drive URLを指定してください。'}), 400
+
+    if not os.environ.get('ANTHROPIC_API_KEY', '').strip():
+        return jsonify({'error': 'ANTHROPIC_API_KEY が設定されていません。'}), 500
+
+    task_id = str(uuid.uuid4())
+    filepath = os.path.join(UPLOAD_FOLDER, f'{task_id}.mp4')
+
+    tasks[task_id] = {
+        'status': 'processing',
+        'progress': 0,
+        'message': 'ダウンロードを開始しています...',
+        'results': [],
+        'filename': url,
+    }
+
+    thread = threading.Thread(
+        target=process_gdrive,
+        args=(task_id, url, filepath),
+        daemon=True
+    )
+    thread.start()
+
+    return jsonify({'task_id': task_id})
+
+
+def process_gdrive(task_id, url, filepath):
+    try:
+        import gdown
+        tasks[task_id]['message'] = 'Google Driveから動画をダウンロード中...'
+        tasks[task_id]['progress'] = 10
+
+        output = gdown.download(url, filepath, quiet=True, fuzzy=True)
+        if not output or not os.path.exists(filepath):
+            raise Exception('ダウンロードに失敗しました。共有設定が「リンクを知っている全員」になっているか確認してください。')
+
+        tasks[task_id]['message'] = 'ダウンロード完了。処理を開始します...'
+        tasks[task_id]['progress'] = 30
+
+        # Extract filename from URL or use default
+        tasks[task_id]['filename'] = 'Google Drive動画'
+
+        process_video(task_id, filepath)
+    except Exception as e:
+        err = str(e)
+        if 'permission' in err.lower() or 'access' in err.lower() or '403' in err:
+            msg = '⚠️ アクセスできませんでした。\nGoogleドライブの共有設定を「リンクを知っている全員が閲覧可能」に変更してください。'
+        else:
+            msg = f'Google Driveダウンロードエラー: {err}'
+        tasks[task_id].update({'status': 'error', 'message': msg})
+        if os.path.exists(filepath):
+            os.remove(filepath)
+
+
 def process_youtube(task_id, url, filepath):
     try:
         import yt_dlp
