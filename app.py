@@ -225,8 +225,13 @@ def upload_cookies():
 
 @app.route('/cookie_status')
 def cookie_status():
+    b64 = os.environ.get('YT_COOKIES_B64', '').strip()
     _ensure_cookies_file()
-    return jsonify({'has_cookies': os.path.exists(COOKIES_PATH)})
+    return jsonify({
+        'has_cookies': os.path.exists(COOKIES_PATH),
+        'has_b64_env': bool(b64),
+        'b64_length': len(b64),
+    })
 
 
 @app.route('/start_youtube', methods=['POST'])
