@@ -300,7 +300,15 @@ def process_gdrive(task_id, url, filepath):
         tasks[task_id]['message'] = 'Google Driveから動画をダウンロード中...'
         tasks[task_id]['progress'] = 10
 
-        output = gdown.download(url, filepath, quiet=True, fuzzy=True)
+        # Google Drive URLからファイルIDを抽出して直接ダウンロードURLに変換
+        import re as _re
+        match = _re.search(r'/d/([a-zA-Z0-9_-]+)', url)
+        if match:
+            file_id = match.group(1)
+            download_url = f'https://drive.google.com/uc?id={file_id}'
+        else:
+            download_url = url
+        output = gdown.download(download_url, filepath, quiet=True)
         if not output or not os.path.exists(filepath):
             raise Exception('ダウンロードに失敗しました。共有設定が「リンクを知っている全員」になっているか確認してください。')
 
