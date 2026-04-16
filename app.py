@@ -152,11 +152,13 @@ def process_video(task_id, filepath):
         tasks[task_id]['message'] = 'フレームを抽出しています...'
         frames = extract_key_frames(filepath, progress_callback=progress_cb)
 
+        tasks[task_id]['message'] = f'フレーム抽出完了: {len(frames)}フレームを解析します...'
+
         if not frames:
             tasks[task_id].update({
                 'status': 'done',
                 'progress': 100,
-                'message': '処理が完了しました（テロップが検出されませんでした）',
+                'message': '処理が完了しました（フレームが抽出されませんでした）',
                 'results': [],
                 'consistency_issues': [],
             })
@@ -187,7 +189,7 @@ def process_video(task_id, filepath):
         tasks[task_id].update({
             'status': 'done',
             'progress': 100,
-            'message': '処理が完了しました',
+            'message': f'処理が完了しました（解析フレーム数: {len(frames)}、テロップ検出数: {len(results)}）',
             'results': results,
             'consistency_issues': consistency_result,
         })

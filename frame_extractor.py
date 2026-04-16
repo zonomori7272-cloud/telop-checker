@@ -2,12 +2,10 @@ import cv2
 import numpy as np
 import base64
 
-# テロップ領域の差分がこの値を超えたらテロップ変化と判定
-TELOP_DIFF_THRESHOLD = 5
-# テロップ領域: フレーム下部何%を使うか（上から40%の位置から下を対象）
-TELOP_CROP_TOP_RATIO = 0.40
+# 前後フレームの差分がこの値を超えたらシーン変化と判定
+DIFF_THRESHOLD = 10
 # 差分に関係なく強制的にフレームを含める間隔（秒）
-FORCED_INTERVAL_SEC = 5
+FORCED_INTERVAL_SEC = 10
 
 
 def extract_key_frames(video_path, progress_callback=None):
@@ -32,7 +30,7 @@ def extract_key_frames(video_path, progress_callback=None):
 
     duration = total_frames / fps
     key_frames = []
-    prev_telop_gray = None
+    prev_gray = None
     second = 0.0
 
     while True:
@@ -49,27 +47,22 @@ def extract_key_frames(video_path, progress_callback=None):
             pct = int((second / duration) * 45)
             progress_callback(pct, f'フレームを抽出中... {int(second)}秒 / {int(duration)}秒')
 
-        # テロップ領域（下部）だけで差分を比較する
-        h, w = frame.shape[:2]
-        crop_top = int(h * TELOP_CROP_TOP_RATIO)
-        telop_area = frame[crop_top:h, 0:w]
-        telop_gray = cv2.cvtColor(telop_area, cv2.COLOR_BGR2GRAY)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         include = False
-        if prev_telop_gray is None:
+        if prev_gray is None:
             include = True  # 最初のフレームは必ず含める
         else:
-            diff = cv2.absdiff(telop_gray, prev_telop_gray)
-            if np.mean(diff) > TELOP_DIFF_THRESHOLD:
+            diff = cv2.absdiff(gray, prev_gray)
+            if np.mean(diff) > DIFF_THRESHOLD:
                 include = True
-            # 一定間隔で必ず含める（静止テロップを取りこぼさないため）
-            elif second % FORCED_INTERVAL_SEC == 0:
-                include = True
+            elif int(second) % FORCED_INTERVAL_SEC == 0:
+                include = True  # 10秒ごとに必ず含める
 
         if include:
             key_frames.append((second, _frame_to_base64(frame)))
 
-        prev_telop_gray = telop_gray
+        prev_gray = gray
         second += 1.0
 
     cap.release()
