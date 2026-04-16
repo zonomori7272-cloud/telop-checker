@@ -2,10 +2,12 @@ import cv2
 import numpy as np
 import base64
 
-# テロップ領域の差分がこの値を超えたらテロップ変化と判定（全体ではなくテロップ領域で比較）
-TELOP_DIFF_THRESHOLD = 8
-# テロップ領域: フレーム下部何%を使うか
-TELOP_CROP_TOP_RATIO = 0.55
+# テロップ領域の差分がこの値を超えたらテロップ変化と判定
+TELOP_DIFF_THRESHOLD = 5
+# テロップ領域: フレーム下部何%を使うか（上から40%の位置から下を対象）
+TELOP_CROP_TOP_RATIO = 0.40
+# 差分に関係なく強制的にフレームを含める間隔（秒）
+FORCED_INTERVAL_SEC = 5
 
 
 def extract_key_frames(video_path, progress_callback=None):
@@ -59,6 +61,9 @@ def extract_key_frames(video_path, progress_callback=None):
         else:
             diff = cv2.absdiff(telop_gray, prev_telop_gray)
             if np.mean(diff) > TELOP_DIFF_THRESHOLD:
+                include = True
+            # 一定間隔で必ず含める（静止テロップを取りこぼさないため）
+            elif second % FORCED_INTERVAL_SEC == 0:
                 include = True
 
         if include:
